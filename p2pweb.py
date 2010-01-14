@@ -10,6 +10,8 @@ import sqlite3
 
 from funcs import *
 
+from PIL import Image
+
 import twisted
 from twisted.web import static, server, resource
 from twisted.internet import reactor
@@ -17,23 +19,39 @@ from twisted.internet import reactor
 class P2PChanWeb(resource.Resource):
   isLeaf = True
   conn = sqlite3.connect(localFile('posts.db'))
-  
+
   def __init__(self, p2pchan, stylesheet):
     self.p2pchan = p2pchan
     self.stylesheet = stylesheet
-    
+
   def render_GET(self, request):
     if getRequestPath(request).startswith('/manage'):
       return self.renderManage(request)
+    elif getRequestPath(request).startswith('/image'):
+      return self.renderImage(request)
     else:
       return self.renderNormal(request)
-    
+
   def render_POST(self, request):
     if getRequestPath(request).startswith('/manage'):
       return self.renderManage(request)
     else:
       return self.renderNormal(request)
-    
+
+  def renderImage(self, request):
+    request.setHeader("content-type", "image/jpeg")
+    lnk = getRequestPath(request).replace('/image/', '')
+    c = self.conn.cursor()
+    if lnk.startswith('thumb/'):
+      lnk = lnk.replace('thumb/', '')
+      c.execute('select thumb from posts where guid = \'' + lnk + '\'')
+    else:
+      c.execute('select file from posts where guid = \'' + lnk + '\'')
+    output = ''
+    for row in c:
+      output += row[0]
+    return base64.decodestring(output)
+
   def renderNormal(self, request):
     replyto = False
     page = numpages = 0
@@ -48,14 +66,17 @@ class P2PChanWeb(resource.Resource):
       if 'file' in request.args:
         if request.args['file'][0] != '':
           imageinfo = getImageInfo(request.args['file'][0])
-          if 'image/jpeg' in imageinfo[0] or 'image/png' in imageinfo[0] or 'image/gif' in imageinfo[0]:
-            socket.setdefaulttimeout(60)
-            params = urllib.urlencode({'key': '51d54904af112c52fc6b04f154134e7b', 'image': base64.b64encode(request.args['file'][0])})
-            req = urllib2.Request("http://imgur.com/api/upload.xml", params)
-            response = urllib2.urlopen(req)
-            hostresponse = parseImageHostResponse(response.read())
-            if hostresponse == []:
-              return formatError('Unable to upload file')
+#          if 'image/jpeg' in imageinfo[0] or 'image/png' in imageinfo[0] or 'image/gif' in imageinfo[0]:
+          if 'image/jpeg' in imageinfo[0]:
+
+            io = StringIO(request.args['file'][0])
+            img = Image.open(io)
+            img = img.resize((100, 100), Image.ANTIALIAS)
+            io = StringIO()
+            img.save(io, "JPEG")
+
+            hostresponse[0] = base64.encodestring(request.args['file'][0])
+            hostresponse[1] = base64.encodestring(io.getvalue())
           else:
             return formatError('Invalid file format')
 
@@ -63,7 +84,7 @@ class P2PChanWeb(resource.Resource):
         return formatError('You must upload an image to start a new thread')
       if request.args['parent'][0] != "" and hostresponse == ['',''] and request.args['message'][0] == '':
         return formatError('You must upload an image or enter a message to reply to a thread')
-      
+
       post = [newGUID(),
               request.args['parent'][0],
               str(timestamp()),
@@ -71,11 +92,18 @@ class P2PChanWeb(resource.Resource):
               request.args['name'][0],
               request.args['email'][0],
               request.args['subject'][0],
-              hostresponse[1],
-              hostresponse[0],
+              '',
+              '',
               request.args['message'][0]]
-      post = decodePostData(encodePostData(post))
+      post = decodePostData(toEntity(encodePostData(post))) # Encode utf-8 to HTML entitys
       c.execute("insert into posts values ('" + "', '".join(post) + "')")
+
+      c.execute("update posts set file = ? where guid = '" + post[0] + "'", [hostresponse[0]])
+      c.execute("update posts set thumb = ? where guid = '" + post[0] + "'", [hostresponse[1]])
+
+      post[7] = hostresponse[1]
+      post[8] = hostresponse[0]
+
       if post[1] != "" and post[5].lower() != 'sage':
         c.execute("update posts set bumped = '" + post[2] + "' where guid = '" + post[1] + "'")
       self.conn.commit()
@@ -97,10 +125,10 @@ class P2PChanWeb(resource.Resource):
         c.execute('select count(*) from posts where parent = \'\'')
         for row in c:
           numpages = int(math.ceil(float(int(row[0])) / float(int(self.p2pchan.postsperpage))))
-          
+
         if 'ind' in request.args:
           page = request.args['ind'][0]
-          
+
         c.execute('select * from posts where parent = \'\' order by bumped desc limit ' + str(self.p2pchan.postsperpage) + ' offset ' + str(int(self.p2pchan.postsperpage) * int(page)))
         for post in c:
           c2.execute('select count(*) from hiddenposts where guid = \'' + post[0] + '\'')
@@ -109,7 +137,7 @@ class P2PChanWeb(resource.Resource):
               c3.execute('select count(*) from posts where parent = \'' + post[0] + '\'')
               for row in c3:
                 numreplies = row[0]
-                
+
               text += buildPost(post, self.conn, numreplies)
 
               replies = ''
@@ -117,9 +145,9 @@ class P2PChanWeb(resource.Resource):
                 c3.execute('select * from posts where parent = \'' + post[0] + '\' order by timestamp desc limit 5')
                 for reply in c3:
                   replies = buildPost(reply, self.conn, 0) + replies
-                  
+
               text += replies + '<br clear="left"><hr>'
-        
+
     return renderPage(text, self.p2pchan, self.stylesheet, replyto, page, numpages)
 
   def renderManage(self, request):
@@ -154,7 +182,7 @@ class P2PChanWeb(resource.Resource):
     elif 'peers' in request.args:
       self.p2pchan.kaishi.fetchPeersFromProvider()
       text += 'Refreshed peer provider.'
-      
+
     if text == '':
       text += """<table width="100%" border="0"><tr width="100%"><td width="50%">
       <form action="/manage" method="get">
@@ -216,10 +244,13 @@ class P2PChanWeb(resource.Resource):
       </legend>
       <p>To fetch some of the latest posts so you don't have a blank board, click "Fetch Threads" to the left.</p>
       <p>If you can not properly connect to any peers, or are connected but don't receive any posts from them, your computer or router may be blocking P2PChan's traffic. Try opening port 44545 on your router, or disabling your local firewall for P2PChan's process.</p>
-      <p>Use &gt; to quote some text: <span class="unkfunc">&gt;you, sir, are and idiot :)</span></p>
+      <p>Use &gt; to quote some text: <span class="unkfunc">&gt;you, sir, are an idiot :)</span></p>
       <p>Use &gt;&gt; to reference another post in the same thread: <a href="#1a179">&gt;&gt;1a179</a></p>
       <p>Use &gt;&gt;&gt; to reference another thread: <a href="/?res=b02de651-c923-11de-b7eb-001d72ed9aa8">&gt;&gt;&gt;&shy;b02de651-c923-11de-b7eb-001d72ed9aa8</a>
-      <p>Formatting options: <b>**bold text**</b> <i>//italic text//</i> <code>``monospaced text``</code></p>
+      <p>Formatting options:</p>
+      <p>[b]text[/b], __text__, **text** == <b>text</b></p>
+      <p>[i]text[/i], *text* == <i>text</i></p>
+      <p>[s]text[/s] == <s>text</s></p>
       </fieldset>
       </td></tr></table>"""
     return renderManagePage(text, self.stylesheet)
