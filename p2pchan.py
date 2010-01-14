@@ -1,3 +1,4 @@
+# -*- coding: utf-8 -*-
 import sys
 import os
 import sqlite3
@@ -25,7 +26,7 @@ class P2PChan(object):
       logMessage("FATAL ERROR: Unable to initialize the network on port " + str(kaishi_port) + ".  Is another copy of P2PChan running?")
       raw_input('')
       sys.exit()
-    
+
   #==============================================================================
   # kaishi hooks
   def handleIncomingData(self, peerid, identifier, uid, message):
@@ -40,8 +41,11 @@ class P2PChan(object):
             c.execute("insert into posts values ('" + "', '".join(post) + "')")
             conn.commit()
             if post[1] != "" and post[5].lower() != 'sage':
-              c.execute("update posts set bumped = '" + str(timestamp()) + "' where guid = '" + post[1] + "'")
-              conn.commit()
+              c.execute('select * from posts where guid = \'' + post[1] + '\' limit 1')
+              for row in c:
+                if row[3] < post[3]:
+                  c.execute("update posts set bumped = '" + str(post[3]) + "' where guid = '" + post[1] + "'")
+                  conn.commit()
     elif identifier == 'THREAD':
       if self.havePostWithGUID(message):
         c = conn.cursor()
@@ -72,11 +76,11 @@ class P2PChan(object):
 
   def handlePeerNickname(self, peerid, nick):
     pass
-    
+
   def handleDroppedPeer(self, peerid):
     logMessage(peerid + ' has dropped from the network.')
   #==============================================================================
-    
+
   def havePostWithGUID(self, guid):
     conn = sqlite3.connect(localFile('posts.db'))
     c = conn.cursor()
@@ -104,7 +108,7 @@ if __name__=='__main__':
   stylesheet = 'futaba'
   postsperpage = 10
   providers = []
-  
+
   try:
     if config.get("p2pchan", "debug").lower() == 'true':
       debug = True
@@ -126,7 +130,7 @@ if __name__=='__main__':
     postsperpage = config.get("p2pchan", "posts per page")
   except:
     pass
-  
+
   i = 0
   while 1:
     try:
@@ -136,6 +140,8 @@ if __name__=='__main__':
       break
   if 'http://p2p.paq.cc/provider.php' not in providers:
     providers.append('http://p2p.paq.cc/provider.php')
+  if 'http://p2p2.paq.cc/provider.php' not in providers:
+    providers.append('http://p2p2.paq.cc/provider.php')
 
   config = ConfigParser.ConfigParser()
   config.add_section('p2pchan')
@@ -153,7 +159,7 @@ if __name__=='__main__':
   f = open(localFile('p2pchan.ini'), 'w')
   config.write(f)
   f.close()
-  
+
   conn = sqlite3.connect(localFile('posts.db'))
   initializeDB(conn)
 
@@ -174,16 +180,17 @@ if __name__=='__main__':
   logMessage('Please ensure UDP port ' + str(kaishi_port) + ' is open.')
 
   if not os.path.isfile(localFile('nodemode')):
-    from twisted.web import static, server, resource
+    from twisted.web import static, server, resource, http
     from twisted.internet import reactor
     from p2pweb import P2PChanWeb
 
     logMessage('There are currently ' + str(len(p2pchan.kaishi.peers)) + ' other users online.')
     logMessage('Visit http://127.0.0.1:' + str(web_port) + ' to begin.')
-    
+
     root = resource.Resource()
     root.putChild("", P2PChanWeb(p2pchan, stylesheet))
     root.putChild("manage", P2PChanWeb(p2pchan, stylesheet))
+    root.putChild("image", P2PChanWeb(p2pchan, stylesheet))
     root.putChild("css", static.File(localFile('css')))
     site = server.Site(root)
 
@@ -193,7 +200,7 @@ if __name__=='__main__':
       logMessage("FATAL ERROR: Unable to bind the web server to port " + str(web_port) + ".  Is it already in use?")
       raw_input('')
       sys.exit()
-    
+
     reactor.run()
   else:
     print '----------------------------------------'
