@@ -38,7 +38,16 @@ class P2PChan(object):
         c.execute('select count(*) from posts where timestamp = \'' + post[2] + '\' and file = \'' + post[8] + '\'')
         for row in c:
           if row[0] == 0:
+            imgThumb = post[7]
+            imgData = post[8]
+            post[7] = ''
+            post[8] = ''
             c.execute("insert into posts values ('" + "', '".join(post) + "')")
+            c.execute("update posts set file = ? where guid = '" + post[0] + "'", [imgData])
+            c.execute("update posts set thumb = ? where guid = '" + post[0] + "'", [imgThumb])
+
+            print 'Saved post '+post[0]
+
             conn.commit()
             if post[1] != "" and post[5].lower() != 'sage':
               c.execute('select * from posts where guid = \'' + post[1] + '\' limit 1')
