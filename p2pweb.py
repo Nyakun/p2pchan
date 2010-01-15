@@ -81,29 +81,13 @@ class P2PChanWeb(resource.Resource):
           if len(request.args['file'][0]) > 1048576: #if image is greater than 1 MB
             return formatError('You must upload an image, which size is lower than 1 MByte')
           if 'image/jpeg' in imageinfo[0] or 'image/png' in imageinfo[0] or 'image/gif' in imageinfo[0]:
-            io = StringIO(request.args['file'][0])
-            img = Image.open(io)
-            if img.size[0] > 200 or img.size[1] > 200: # downscale
-              if img.size[1] > img.size[0]:
-                newX = img.size[0] / (img.size[1] / 200.0)
-                newY = 200
-              else:
-                newY = img.size[1] / (img.size[0] / 200.0)
-                newX = 200
-            else:
-              newX = img.size[0]
-              newY = img.size[1]
-            img = img.resize((int(newX), int(newY)), Image.ANTIALIAS)
-            io = StringIO()
-            if 'image/jpeg' in imageinfo[0]:
-              img.save(io, "JPEG")
-            elif 'image/png' in imageinfo[0]:
-              img.save(io, "PNG")
-            elif 'image/gif' in imageinfo[0]:
-              img.save(io, "GIF")
-
-            hostresponse[0] = base64.encodestring(request.args['file'][0])
-            hostresponse[1] = base64.encodestring(io.getvalue())
+            socket.setdefaulttimeout(60)
+            params = urllib.urlencode({'key': '51d54904af112c52fc6b04f154134e7b', 'image': base64.b64encode(request.args['file'][0])})
+            req = urllib2.Request("http://imgur.com/api/upload.xml", params)
+            response = urllib2.urlopen(req)
+            hostresponse = parseImageHostResponse(response.read())
+            if hostresponse == []:
+              return formatError('Unable to upload file')
           else:
             return formatError('Invalid file format')
 
