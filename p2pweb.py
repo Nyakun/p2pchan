@@ -39,7 +39,6 @@ class P2PChanWeb(resource.Resource):
       return self.renderNormal(request)
 
   def renderImage(self, request):
-    request.setHeader("content-type", "image/jpeg")
     lnk = getRequestPath(request).replace('/image/', '')
     c = self.conn.cursor()
     if lnk.startswith('thumb/'):
@@ -47,10 +46,23 @@ class P2PChanWeb(resource.Resource):
       c.execute('select thumb from posts where guid = \'' + lnk + '\'')
     else:
       c.execute('select file from posts where guid = \'' + lnk + '\'')
+    outputraw = ''
     output = ''
     for row in c:
-      output += row[0]
-    return base64.decodestring(output)
+      outputraw += row[0]
+    try:
+      output = base64.decodestring(outputraw)
+      imageinfo = getImageInfo(output)
+      if 'image/jpeg' in imageinfo[0]:
+        request.setHeader("content-type", "image/jpeg")
+      elif 'image/png' in imageinfo[0]:
+        request.setHeader("content-type", "image/png")
+      elif 'image/gif' in imageinfo[0]:
+        request.setHeader("content-type", "image/gif")
+    except:
+      print 'Not an image'
+      output = outputraw
+    return output
 
   def renderNormal(self, request):
     replyto = False
@@ -66,14 +78,29 @@ class P2PChanWeb(resource.Resource):
       if 'file' in request.args:
         if request.args['file'][0] != '':
           imageinfo = getImageInfo(request.args['file'][0])
-#          if 'image/jpeg' in imageinfo[0] or 'image/png' in imageinfo[0] or 'image/gif' in imageinfo[0]:
-          if 'image/jpeg' in imageinfo[0]:
-
+          if len(request.args['file'][0]) > 1048576: #if image is greater than 1 MB
+            return formatError('You must upload an image, which size is lower than 1 MByte')
+          if 'image/jpeg' in imageinfo[0] or 'image/png' in imageinfo[0] or 'image/gif' in imageinfo[0]:
             io = StringIO(request.args['file'][0])
             img = Image.open(io)
-            img = img.resize((100, 100), Image.ANTIALIAS)
+            if img.size[0] > 200 or img.size[1] > 200: # downscale
+              if img.size[1] > img.size[0]:
+                newX = img.size[0] / (img.size[1] / 200.0)
+                newY = 200
+              else:
+                newY = img.size[1] / (img.size[0] / 200.0)
+                newX = 200
+            else:
+              newX = img.size[0]
+              newY = img.size[1]
+            img = img.resize((int(newX), int(newY)), Image.ANTIALIAS)
             io = StringIO()
-            img.save(io, "JPEG")
+            if 'image/jpeg' in imageinfo[0]:
+              img.save(io, "JPEG")
+            elif 'image/png' in imageinfo[0]:
+              img.save(io, "PNG")
+            elif 'image/gif' in imageinfo[0]:
+              img.save(io, "GIF")
 
             hostresponse[0] = base64.encodestring(request.args['file'][0])
             hostresponse[1] = base64.encodestring(io.getvalue())
