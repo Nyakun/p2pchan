@@ -298,7 +298,7 @@ def buildPost(post, conn, numreplies=-1):
     if post[POST_THUMB].startswith('http'):
       html += '<a target="_blank" href="' + post[POST_FILE] + '"><img src="' + post[POST_THUMB] + '" width="90" height="90" alt="' + post[POST_GUID] + '" class="thumb"></a>'
     else:
-      html += '<a target="_blank" href="image/' + post[POST_GUID] + '"><img src="image/' + post[POST_GUID] + '" alt="' + post[POST_GUID] + '" class="thumb"></a>'
+      html += '<a target="_blank" href="image/' + post[POST_GUID] + '"><img src="image/thumb/' + post[POST_GUID] + '" alt="' + post[POST_GUID] + '" class="thumb"></a>'
   else:
     html += """<table>
     <tbody>
