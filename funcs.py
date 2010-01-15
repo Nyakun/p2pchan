@@ -295,7 +295,10 @@ def buildPost(post, conn, numreplies=-1):
     onclick = ' onclick="javascript:document.postform.message.value = document.postform.message.value + \'>>' + post[POST_GUID][0:5] + '\';return false;"'
 
   if post[POST_PARENT] == "" and post[POST_FILE] != "":
-    html += '<a target="_blank" href="image/' + post[POST_GUID] + '"><img src="image/' + post[POST_GUID] + '" width="200" height="200" alt="' + post[POST_GUID] + '" class="thumb"></a>'
+    if post[POST_THUMB].startswith('http'):
+      html += '<a target="_blank" href="' + post[POST_FILE] + '"><img src="' + post[POST_THUMB] + '" width="90" height="90" alt="' + post[POST_GUID] + '" class="thumb"></a>'
+    else:
+      html += '<a target="_blank" href="image/' + post[POST_GUID] + '"><img src="image/' + post[POST_GUID] + '" alt="' + post[POST_GUID] + '" class="thumb"></a>'
   else:
     html += """<table>
     <tbody>
@@ -327,8 +330,11 @@ def buildPost(post, conn, numreplies=-1):
     if numreplies > -1:
       html += ' [<a href="/?res=' + post[POST_GUID] + '">Reply</a>]'
   elif post[POST_FILE] != '':
-    html += '<br>' + \
-    '<a target="_blank" href="image/' + post[POST_GUID] + '"><img src="image/thumb/' + post[POST_GUID] + '" width="200" height="200" alt="' + post[POST_GUID] + '" class="thumb"></a>'
+    html += '<br>'
+    if post[POST_THUMB].startswith('http'):
+      html += '<a target="_blank" href="' + post[POST_FILE] + '"><img src="' + post[POST_THUMB] + '" width="90" height="90" alt="' + post[POST_GUID] + '" class="thumb"></a>'
+    else:
+      html += '<a target="_blank" href="image/' + post[POST_GUID] + '"><img src="image/thumb/' + post[POST_GUID] + '" alt="' + post[POST_GUID] + '" class="thumb"></a>'
   html += '<blockquote>' + message + '</blockquote>'
   if numreplies > 5:
     html += '<span class="omittedposts">' + str(numreplies - 5) + ' post'
