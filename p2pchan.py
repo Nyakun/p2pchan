@@ -33,6 +33,9 @@ class P2PChan(object):
     conn = sqlite3.connect(localFile('posts.db'))
     if identifier == 'POST':
       post = decodePostData(message)
+      if len(post[9]) > 20480: # drop message greater than 20K symbols
+        print 'Dropped post '+post[0]
+        return
       if not self.havePostWithGUID(post[0]):
         c = conn.cursor()
         c.execute('select count(*) from posts where timestamp = \'' + post[2] + '\' and file = \'' + post[8] + '\'')
