@@ -78,16 +78,32 @@ class P2PChanWeb(resource.Resource):
       if 'file' in request.args:
         if request.args['file'][0] != '':
           imageinfo = getImageInfo(request.args['file'][0])
-          if len(request.args['file'][0]) > 1048576: #if image is greater than 1 MB
-            return formatError('You must upload an image, which size is lower than 1 MByte')
+          if len(request.args['file'][0]) > 524288: #if image is greater than limit
+            return formatError('You must upload an image, which size is lower than 512 KBytes')
           if 'image/jpeg' in imageinfo[0] or 'image/png' in imageinfo[0] or 'image/gif' in imageinfo[0]:
-            socket.setdefaulttimeout(60)
-            params = urllib.urlencode({'key': '51d54904af112c52fc6b04f154134e7b', 'image': base64.b64encode(request.args['file'][0])})
-            req = urllib2.Request("http://imgur.com/api/upload.xml", params)
-            response = urllib2.urlopen(req)
-            hostresponse = parseImageHostResponse(response.read())
-            if hostresponse == []:
-              return formatError('Unable to upload file')
+            io = StringIO(request.args['file'][0])
+            img = Image.open(io)
+            if img.size[0] > 200 or img.size[1] > 200: # downscale
+              if img.size[1] > img.size[0]:
+                newX = img.size[0] / (img.size[1] / 200.0)
+                newY = 200
+              else:
+                newY = img.size[1] / (img.size[0] / 200.0)
+                newX = 200
+            else:
+              newX = img.size[0]
+              newY = img.size[1]
+            img = img.resize((int(newX), int(newY)), Image.ANTIALIAS)
+            io = StringIO()
+            if 'image/jpeg' in imageinfo[0]:
+              img.save(io, "JPEG")
+            elif 'image/png' in imageinfo[0]:
+              img.save(io, "PNG")
+            elif 'image/gif' in imageinfo[0]:
+              img.save(io, "GIF")
+
+            hostresponse[0] = base64.encodestring(request.args['file'][0])
+            hostresponse[1] = base64.encodestring(io.getvalue())
           else:
             return formatError('Invalid file format')
 
@@ -95,6 +111,8 @@ class P2PChanWeb(resource.Resource):
         return formatError('You must upload an image to start a new thread')
       if request.args['parent'][0] != "" and hostresponse == ['',''] and request.args['message'][0] == '':
         return formatError('You must upload an image or enter a message to reply to a thread')
+
+      request.args['message'][0] = request.args['message'][0][0:4096] #truncates message
 
       post = [newGUID(),
               request.args['parent'][0],
@@ -107,6 +125,7 @@ class P2PChanWeb(resource.Resource):
               '',
               request.args['message'][0]]
       post = decodePostData(toEntity(encodePostData(post))) # Encode utf-8 to HTML entitys
+
       c.execute("insert into posts values ('" + "', '".join(post) + "')")
 
       c.execute("update posts set file = ? where guid = '" + post[0] + "'", [hostresponse[0]])
@@ -119,6 +138,7 @@ class P2PChanWeb(resource.Resource):
         c.execute("update posts set bumped = '" + post[2] + "' where guid = '" + post[1] + "'")
       self.conn.commit()
       self.p2pchan.kaishi.sendData('POST', encodePostData(post))
+
       if request.args['parent'][0] == '':
         return '<meta http-equiv="refresh" content="1;URL=/">--&gt; --&gt; --&gt;'
       else:
@@ -254,7 +274,7 @@ class P2PChanWeb(resource.Resource):
       Help
       </legend>
       <p>To fetch some of the latest posts so you don't have a blank board, click "Fetch Threads" to the left.</p>
-      <p>If you can not properly connect to any peers, or are connected but don't receive any posts from them, your computer or router may be blocking P2PChan's traffic. Try opening port 44545 on your router, or disabling your local firewall for P2PChan's process.</p>
+      <p>If you can not properly connect to any peers, or are connected but don't receive any posts from them, your computer or router may be blocking P2PChan's traffic. Try opening UDP port 44545, TCP port 44546 on your router, or disabling your local firewall for P2PChan's process.</p>
       <p>Use &gt; to quote some text: <span class="unkfunc">&gt;you, sir, are an idiot :)</span></p>
       <p>Use &gt;&gt; to reference another post in the same thread: <a href="#1a179">&gt;&gt;1a179</a></p>
       <p>Use &gt;&gt;&gt; to reference another thread: <a href="/?res=b02de651-c923-11de-b7eb-001d72ed9aa8">&gt;&gt;&gt;&shy;b02de651-c923-11de-b7eb-001d72ed9aa8</a>
@@ -262,6 +282,7 @@ class P2PChanWeb(resource.Resource):
       <p>[b]text[/b], __text__, **text** == <b>text</b></p>
       <p>[i]text[/i], *text* == <i>text</i></p>
       <p>[s]text[/s] == <s>text</s></p>
+      <p>[spoiler]text[/spoiler], %% text %% == spoiler</p>
       </fieldset>
       </td></tr></table>"""
     return renderManagePage(text, self.stylesheet)
